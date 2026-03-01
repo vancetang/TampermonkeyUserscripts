@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Facebook: 好用的鍵盤快速鍵集合
-// @version      0.8.2
+// @version      0.8.3
 // @description  按下 Ctrl+B 快速切換側邊欄、Ctrl+I 檢舉留言、Ctrl+Delete 刪除留言、Alt+B 快速封鎖使用者
 // @license      MIT
 // @homepage     https://blog.miniasp.com/
@@ -33,6 +33,9 @@
             // 只有粉絲團的 Sidebar 沒有找到才去隱藏其他的側邊欄
             // 因為只有粉絲團的 Sidebar 有切換顯示的按鈕
             toggleSidebar() || await toggleSidebarByNavigation();
+
+            toggleReelsLayout();
+
             event.preventDefault();
             return;
         }
@@ -104,6 +107,20 @@
             }
         }
     });
+
+    function toggleReelsLayout() {
+        const elements = document.querySelectorAll(
+            'div[aria-label="Video player"], div[role="complementary"]'
+        );
+
+        if (elements.length === 0) return;
+
+        const shouldHide = elements[0].style.display !== 'none';
+
+        elements.forEach(el => {
+            el.style.display = shouldHide ? 'none' : '';
+        });
+    }
 
     /**
      * 檢查給定的元素是否處於輸入模式。
