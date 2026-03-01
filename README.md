@@ -454,6 +454,13 @@
     </tr>
     <tr>
       <td>
+        <a href="https://github.com/doggy8088/TampermonkeyUserscripts/raw/main/src/FormSnapshotHumanLikeRefill.user.js"><img alt="下載" src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>
+      </td>
+      <td>表單快照與人類模擬回填</td>
+      <td>透過選單命令儲存與回填目前頁面表單快照，支援 JSON 匯出/匯入以跨電腦移轉。</td>
+    </tr>
+    <tr>
+      <td>
         <a href="https://github.com/doggy8088/TampermonkeyUserscripts/raw/main/src/LanguageSwitcher.user.js"><img alt="下載" src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>
       </td>
       <td>中、英文網頁切換器</td>
