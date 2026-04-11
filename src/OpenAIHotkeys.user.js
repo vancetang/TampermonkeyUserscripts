@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         OpenAI Platform: 好用的鍵盤快速鍵集合
-// @version      0.1.0
+// @version      0.1.1
 // @description  按下 Ctrl+B 快速切換側邊欄
 // @license      MIT
 // @homepage     https://blog.miniasp.com/
@@ -20,7 +20,7 @@
 
     document.addEventListener("keydown", async (event) => {
         // 按下 Ctrl+B 快速切換側邊欄
-        if ((event.ctrlKey && !event.altKey && event.key === "b") || (!event.ctrlKey && !event.altKey && event.key === "f")) {
+        if ((event.ctrlKey && !event.altKey && event.key === "b") || (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === "f")) {
             await toggleSidebarByNavigation();
         }
     });

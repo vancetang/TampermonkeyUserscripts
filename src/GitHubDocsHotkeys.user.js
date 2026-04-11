@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         GitHub Docs: 好用的鍵盤快速鍵集合
-// @version      0.1.0
+// @version      0.1.1
 // @description  按下 f 可以快速隱藏 GitHub 網站中所有非主要內容的區塊
 // @license      MIT
 // @homepage     https://blog.miniasp.com/
@@ -21,7 +21,7 @@
         // 從網址列取得 pathinfo
         const currentPath = window.location.pathname;
 
-        if (!event.ctrlKey && event.key === 'f') {
+        if (!event.ctrlKey && !event.metaKey && event.key === 'f') {
             // 如果是輸入欄位，就不要觸發。但是按下 alt+j 就可以觸發這個功能。
             if ((event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') && !event.altKey) {
                 return;
