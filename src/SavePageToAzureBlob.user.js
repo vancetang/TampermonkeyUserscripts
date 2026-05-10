@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         網頁快照上傳至 Azure Blob Storage
-// @version      0.1.1
+// @version      0.2.0
 // @description  透過 Tampermonkey 選單將目前網頁製作成完全獨立的 HTML 快照（所有 CSS、圖片、字型均轉為 Data URI），並上傳至指定的 Azure Blob Storage，最後在新頁籤開啟純淨快照 URL
 // @license      MIT
 // @homepage     https://blog.miniasp.com/
@@ -111,6 +111,14 @@
     // GM_xmlhttpRequest 請求逾時（毫秒），預設 30 秒
     const REQUEST_TIMEOUT_MS = 30000;
 
+    // 防止同一頁面上的多個觸發來源在短時間內同時執行快照流程。
+    // 這個腳本同時支援 Tampermonkey 選單與 context-menu 橋接事件，
+    // 若瀏覽器或擴充套件在某些頁面上重複派發觸發，就可能造成多次上傳、
+    // 多個成功訊息，以及多個新頁籤被連續開啟。
+    // 透過「單一進行中作業鎖」可確保整個頁面在任一時間只會有一份快照作業。
+    let activeSaveOperation = null;
+    let activeStatusBar = null;
+
     // ===== 工具：Promise 化 GM_xmlhttpRequest =====
 
     /**
@@ -138,6 +146,24 @@
                 ontimeout()   { reject(new Error(`Timeout: ${options.url}`)); },
                 onabort()     { reject(new Error(`Aborted: ${options.url}`)); }
             });
+        });
+    }
+
+    /**
+     * 簡單的 Promise 延遲工具。
+     *
+     * 設計意圖：
+     *   - 讓原本以 setTimeout() 實作的「延後開新頁籤」可被 await，
+     *     使主流程的生命週期更完整、也更容易被防重入鎖正確涵蓋。
+     *   - 只有當延遲結束且開頁邏輯完成後，才釋放 activeSaveOperation，
+     *     避免短時間內再次觸發時又啟動第二輪上傳。
+     *
+     * @param {number} ms - 要等待的毫秒數
+     * @returns {Promise<void>} 延遲完成後 resolve
+     */
+    function delay(ms) {
+        return new Promise(resolve => {
+            window.setTimeout(resolve, ms);
         });
     }
 
@@ -789,6 +815,14 @@
      *   5. 在新頁籤開啟純淨的 Blob URL
      */
     async function savePageToAzureBlob() {
+        if (activeSaveOperation) {
+            // 直接重用既有作業，而不是再啟動第二份快照流程。
+            // 這可避免同一頁面因重複事件或連點而開出多個空白分頁。
+            activeStatusBar?.update('⏳ 已有進行中的快照作業，忽略重複觸發...');
+            console.warn('[SavePageToAzureBlob] 偵測到重複觸發，已忽略新的快照要求。');
+            return activeSaveOperation;
+        }
+
         // 讀取已儲存的 SAS URL
         const sasUrl = GM_getValue(SAS_URL_STORAGE_KEY, '');
         if (!sasUrl) {
@@ -797,42 +831,48 @@
         }
 
         const statusBar = createStatusBar('🔄 正在擷取頁面資源，請稍候...');
+        activeStatusBar = statusBar;
 
-        try {
-            // ── 序列化頁面（資源內嵌）──
-            const htmlContent = await serializePage((current, total, msg) => {
-                const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-                statusBar.update(`🔄 處理中 ${pct}%（${current}/${total}）\n${msg}`);
-            });
+        activeSaveOperation = (async () => {
+            try {
+                // ── 序列化頁面（資源內嵌）──
+                const htmlContent = await serializePage((current, total, msg) => {
+                    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                    statusBar.update(`🔄 處理中 ${pct}%（${current}/${total}）\n${msg}`);
+                });
 
-            const sizeKb = Math.round(new TextEncoder().encode(htmlContent).byteLength / 1024);
-            statusBar.update(`📤 正在上傳（${sizeKb.toLocaleString()} KB），請稍候...`);
+                const sizeKb = Math.round(new TextEncoder().encode(htmlContent).byteLength / 1024);
+                statusBar.update(`📤 正在上傳（${sizeKb.toLocaleString()} KB），請稍候...`);
 
-            // ── 上傳至 Azure Blob ──
-            const cleanUrl = await uploadToAzureBlob(htmlContent, sasUrl);
+                // ── 上傳至 Azure Blob ──
+                const cleanUrl = await uploadToAzureBlob(htmlContent, sasUrl);
 
-            statusBar.update(`✅ 上傳成功！即將切換至快照頁籤...\n${cleanUrl}`);
+                statusBar.update(`✅ 上傳成功！即將切換至快照頁籤...\n${cleanUrl}`);
 
-            // 稍作延遲讓使用者看到成功訊息後，再開啟快照頁籤並切換過去，
-            // 符合「保留在原頁等待上傳完成」的使用體驗。
-            setTimeout(() => {
+                // 稍作延遲讓使用者看到成功訊息後，再開啟快照頁籤並切換過去，
+                // 符合「保留在原頁等待上傳完成」的使用體驗。
+                await delay(2000);
+
                 const openedTab = openSnapshotTab(cleanUrl);
                 if (!openedTab) {
                     statusBar.update(`✅ 上傳成功，但新頁籤被瀏覽器封鎖。\n請允許彈出式視窗或手動開啟：\n${cleanUrl}`);
-                    setTimeout(() => statusBar.remove(), 6000);
+                    await delay(6000);
                     return;
                 }
+            } catch (err) {
+                // 擷取或上傳失敗時顯示錯誤，並提供複製建議
+                statusBar.update(`❌ 操作失敗：${err.message}`);
+                console.error('[SavePageToAzureBlob] 操作失敗：', err);
+                await delay(6000);
+            } finally {
                 statusBar.remove();
-            }, 2000);
+            }
+        })().finally(() => {
+            activeSaveOperation = null;
+            activeStatusBar = null;
+        });
 
-        } catch (err) {
-            // 擷取或上傳失敗時顯示錯誤，並提供複製建議
-            statusBar.update(`❌ 操作失敗：${err.message}`);
-            console.error('[SavePageToAzureBlob] 操作失敗：', err);
-
-            // 6 秒後移除錯誤提示條
-            setTimeout(() => statusBar.remove(), 6000);
-        }
+        return activeSaveOperation;
     }
 
     // ===== 設定流程：「⚙️ 設定 Azure Blob SAS URL」選單功能 =====
